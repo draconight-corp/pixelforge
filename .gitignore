@@ -1,0 +1,12 @@
+# Auth credentials
+.auth
+
+# Local storage data
+data/
+
+# Cloudflare tunnel binary
+cloudflared.exe
+
+# Python cache
+__pycache__/
+*.pyc
