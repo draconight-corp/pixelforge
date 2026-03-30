@@ -758,6 +758,18 @@
     resize: both;
     overflow: hidden;
   }
+  .dock-resize-handle {
+    position: absolute;
+    bottom: 0; right: 0;
+    width: 18px; height: 18px;
+    cursor: nwse-resize;
+    touch-action: none;
+    z-index: 10;
+    background: linear-gradient(135deg, transparent 50%, var(--accent) 50%);
+    border-radius: 0 0 3px 0;
+    opacity: 0.6;
+  }
+  .dock-resize-handle:hover, .dock-resize-handle:active { opacity: 1; }
   .dock-panel.floating .dock-header {
     background: var(--accent);
     border-bottom: 1px solid var(--border);
@@ -3811,18 +3823,9 @@ function _emergencySave(){
         console.log('[EMERGENCY SAVE] Local server OK');
       } catch(e) {}
     }
-    // Try Supabase (synchronous XHR)
+    // Cloud: fire async upload (best effort, won't block page unload)
     if (PFStore.hasSupabase) {
-      try {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', SUPABASE_URL + '/rest/v1/storage', false);
-        xhr.setRequestHeader('Content-Type', 'application/json');
-        xhr.setRequestHeader('apikey', SUPABASE_KEY);
-        xhr.setRequestHeader('Authorization', 'Bearer ' + SUPABASE_KEY);
-        xhr.setRequestHeader('Prefer', 'resolution=merge-duplicates');
-        xhr.send(JSON.stringify({ key: 'project', value: data, updated_at: new Date().toISOString() }));
-        console.log('[EMERGENCY SAVE] Supabase OK');
-      } catch(e) {}
+      try { navigator.sendBeacon && PFStore.forceCloudSave('project', data); } catch(e) {}
     }
     // Always save to localStorage as last resort
     try {
@@ -4183,39 +4186,36 @@ function exportHorizontalStrip() {
 }
 
 // ===== CLOUD + LOCAL STORAGE (synced across all devices) =====
-// Supabase config — fill these after creating your free project at supabase.com
 const SUPABASE_URL = 'https://hfdpyrfkvqmontsxxocg.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmZHB5cmZrdnFtb250c3h4b2NnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1Mzk4OTcsImV4cCI6MjA5MDExNTg5N30.3BI9LF3N_DdLjMkMAocKErQIqn9BJipDWVIROjPK1Q4';
+const SUPABASE_BUCKET = 'pixelforge';
 
 const PFStore = (() => {
   const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   const hasSupabase = SUPABASE_URL && SUPABASE_KEY;
 
-  // --- Supabase REST helpers ---
-  async function supabaseSave(key, value) {
-    const resp = await fetch(`${SUPABASE_URL}/rest/v1/storage`, {
+  // --- Supabase Storage helpers (file-based, supports large data) ---
+  async function supabaseUpload(filename, data) {
+    const body = JSON.stringify(data);
+    const resp = await fetch(`${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${filename}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'apikey': SUPABASE_KEY,
         'Authorization': 'Bearer ' + SUPABASE_KEY,
-        'Prefer': 'resolution=merge-duplicates'
+        'x-upsert': 'true'
       },
-      body: JSON.stringify({ key, value, updated_at: new Date().toISOString() })
+      body
     });
-    if (!resp.ok) throw new Error('Supabase save failed: ' + resp.status);
+    if (!resp.ok) throw new Error(`Storage upload ${filename} failed: ${resp.status}`);
   }
 
-  async function supabaseLoad(key) {
-    const resp = await fetch(`${SUPABASE_URL}/rest/v1/storage?key=eq.${key}&select=value`, {
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Authorization': 'Bearer ' + SUPABASE_KEY
-      }
-    });
-    if (!resp.ok) throw new Error('Supabase load failed: ' + resp.status);
-    const rows = await resp.json();
-    return rows.length > 0 ? rows[0].value : null;
+  async function supabaseDownload(filename) {
+    // Public bucket = no auth needed for reads
+    const resp = await fetch(`${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${filename}?t=${Date.now()}`);
+    if (resp.status === 404 || resp.status === 400) return null;
+    if (!resp.ok) throw new Error(`Storage download ${filename} failed: ${resp.status}`);
+    return await resp.json();
   }
 
   // --- Local server helpers ---
@@ -4234,7 +4234,9 @@ const PFStore = (() => {
     return await resp.json();
   }
 
-  // --- Main API: local + cloud sync ---
+  // --- Main API ---
+  let _cloudSaveTimer = null;
+
   async function save(key, value) {
     let saved = false;
     // Save to local server if available
@@ -4243,13 +4245,19 @@ const PFStore = (() => {
         console.warn('[PFStore] Local save failed:', e);
       }
     }
-    // Always sync to Supabase if configured
+    // Debounce cloud saves (heavy operation)
     if (hasSupabase) {
-      try { await supabaseSave(key, value); saved = true; } catch(e) {
-        console.warn('[PFStore] Supabase save failed:', e);
-      }
+      clearTimeout(_cloudSaveTimer);
+      _cloudSaveTimer = setTimeout(async () => {
+        try {
+          await supabaseUpload(key + '.json', value);
+          console.log('[PFStore] Cloud sync OK (' + key + ')');
+        } catch(e) {
+          console.warn('[PFStore] Cloud save failed:', e);
+        }
+      }, key === 'project' ? 5000 : 1000); // 5s debounce for project (large), 1s for presets
+      saved = true;
     }
-    // Fallback: localStorage
     if (!saved) {
       try { localStorage.setItem('pixelforge_' + key, JSON.stringify(value)); } catch(e) {}
     }
@@ -4260,16 +4268,16 @@ const PFStore = (() => {
     if (isLocal) {
       try {
         const data = await localLoad(key);
-        if (data && data.sprites && data.sprites.length > 0) return data;
+        if (data && (!data.sprites || data.sprites.length > 0)) return data;
       } catch(e) {}
     }
-    // Try Supabase
+    // Try Supabase Storage
     if (hasSupabase) {
       try {
-        const data = await supabaseLoad(key);
+        const data = await supabaseDownload(key + '.json');
         if (data) return data;
       } catch(e) {
-        console.warn('[PFStore] Supabase load failed:', e);
+        console.warn('[PFStore] Cloud load failed:', e);
       }
     }
     // Fallback: localStorage
@@ -4279,7 +4287,13 @@ const PFStore = (() => {
     } catch(e) { return null; }
   }
 
-  return { save, load, isLocal, hasSupabase };
+  // Force immediate cloud sync (for emergency save)
+  async function forceCloudSave(key, value) {
+    if (!hasSupabase) return;
+    try { await supabaseUpload(key + '.json', value); } catch(e) {}
+  }
+
+  return { save, load, forceCloudSave, isLocal, hasSupabase };
 })();
 
 let _saveTimer = null;
@@ -8452,8 +8466,49 @@ const DockManager = (() => {
 
     document.body.appendChild(el);
 
+    // Add touch-friendly resize handle
+    if (!el.querySelector('.dock-resize-handle')) {
+      const rh = document.createElement('div');
+      rh.className = 'dock-resize-handle';
+      el.appendChild(rh);
+      setupFloatingResize(panelId, rh);
+    }
+
     // Make floating panel draggable by header
     setupFloatingDrag(panelId);
+  }
+
+  function setupFloatingResize(panelId, handle) {
+    const pInfo = panels[panelId];
+    const el = pInfo.el;
+    let rdrag = null;
+
+    handle.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handle.setPointerCapture(e.pointerId);
+      const rect = el.getBoundingClientRect();
+      rdrag = { startX: e.clientX, startY: e.clientY, origW: rect.width, origH: rect.height, pointerId: e.pointerId };
+
+      const onMove = (ev) => {
+        if (!rdrag) return;
+        const newW = Math.max(160, rdrag.origW + (ev.clientX - rdrag.startX));
+        const newH = Math.max(60, rdrag.origH + (ev.clientY - rdrag.startY));
+        el.style.width = newW + 'px';
+        el.style.height = newH + 'px';
+        pInfo.floatW = newW;
+        pInfo.floatH = newH;
+      };
+      const onUp = () => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        try { handle.releasePointerCapture(rdrag.pointerId); } catch(ex) {}
+        rdrag = null;
+        saveLayout();
+      };
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+    });
   }
 
   function setupFloatingDrag(panelId) {
