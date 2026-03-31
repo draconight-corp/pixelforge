@@ -1996,6 +1996,14 @@ function renderLayers() {
 }
 
 // ===== INIT =====
+// ===== PREVENT BROWSER BACK/FORWARD =====
+// Push a dummy state so back button doesn't leave the app
+history.pushState(null, '', location.href);
+window.addEventListener('popstate', () => { history.pushState(null, '', location.href); });
+// Block mouse back/forward buttons globally
+document.addEventListener('mousedown', e => { if (e.button === 3 || e.button === 4) e.preventDefault(); });
+document.addEventListener('mouseup', e => { if (e.button === 3 || e.button === 4) e.preventDefault(); });
+
 async function init() {
   await autoLoad();
   initCanvas();
