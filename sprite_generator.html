@@ -2028,6 +2028,7 @@ function initCanvas() {
   canvas.addEventListener('pointerleave', onMouseLeave);
   canvas.addEventListener('pointercancel', onMouseLeave);
   canvas.addEventListener('contextmenu', e => e.preventDefault());
+  document.addEventListener('contextmenu', e => { if(e.target.closest('.canvas-viewport,.toolbar,.sel-toolbar,.floating-bar'))e.preventDefault(); });
   initTouchGestures();
   renderCanvas();
 }
@@ -2152,6 +2153,8 @@ function onMouseDown(e) {
   // Only track the first pointer (ignore additional fingers on touch)
   if (_primaryPointerId !== null && e.pointerId !== _primaryPointerId) return;
   _primaryPointerId = e.pointerId;
+  // Block browser back/forward buttons (button 3/4)
+  if (e.button === 3 || e.button === 4) { e.preventDefault(); return; }
 
   const { x, y } = getPixelCoords(e);
 
@@ -2228,6 +2231,8 @@ function onMouseDown(e) {
 
   // Right click = erase (any tool)
   if (e.button === 2) {
+    e.preventDefault();
+    e.stopPropagation();
     state.isDrawing = true;
     state._rightDrawing = true;
     state._longPicking = false;
