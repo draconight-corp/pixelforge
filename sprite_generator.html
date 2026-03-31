@@ -654,7 +654,12 @@
     box-shadow: 0 2px 10px rgba(0,0,0,0.4);
     gap: 2px; align-items: center;
   }
-  .sel-toolbar.show { display: flex; }
+  .sel-toolbar.show { display: flex; flex-wrap: wrap; }
+  .sel-toolbar .drag-handle {
+    cursor: grab; padding: 2px 4px; color: var(--text-dim); font-size: 10px;
+    touch-action: none; user-select: none;
+  }
+  .sel-toolbar .drag-handle:active { cursor: grabbing; color: var(--text); }
   .sel-toolbar button {
     background: var(--bg-darkest); border: 1px solid var(--border);
     color: var(--text); cursor: pointer; border-radius: 2px;
@@ -1831,6 +1836,7 @@
 </div>
 
 <div class="sel-toolbar" id="selToolbar">
+  <span class="drag-handle" id="selToolbarDrag">⠿</span>
   <span class="sel-info" id="selToolbarInfo"></span>
   <button onclick="moveSelectionPixels(0,-1)" title="Monter 1px">▲</button>
   <button onclick="moveSelectionPixels(-1,0)" title="Gauche 1px">◀</button>
@@ -1849,7 +1855,7 @@
 </div>
 
 <div class="inpaint-panel" id="inpaintPanel">
-  <div class="inpaint-header">
+  <div class="inpaint-header" id="inpaintDrag" style="cursor:grab;touch-action:none">
     <span class="inpaint-title">GENERATE IN SELECTION</span>
     <button class="s-act-btn" onclick="hideInpaintPanel()">×</button>
   </div>
@@ -4801,6 +4807,38 @@ function showInpaintPanel(){
 function hideInpaintPanel(){
   document.getElementById('inpaintPanel').classList.remove('show');
 }
+
+// Make selection toolbar and inpaint panel draggable
+function makeDraggablePanel(handleId, panelId) {
+  const handle = document.getElementById(handleId);
+  const panel = document.getElementById(panelId);
+  if (!handle || !panel) return;
+  let drag = null;
+  handle.addEventListener('pointerdown', e => {
+    if (e.target.closest('button')) return;
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    const rect = panel.getBoundingClientRect();
+    drag = { ox: e.clientX - rect.left, oy: e.clientY - rect.top, pid: e.pointerId };
+    const onMove = ev => {
+      if (!drag) return;
+      panel.style.left = Math.max(0, ev.clientX - drag.ox) + 'px';
+      panel.style.top = Math.max(0, ev.clientY - drag.oy) + 'px';
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      try { handle.releasePointerCapture(drag.pid); } catch(ex) {}
+      drag = null;
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  });
+}
+setTimeout(() => {
+  makeDraggablePanel('selToolbarDrag', 'selToolbar');
+  makeDraggablePanel('inpaintDrag', 'inpaintPanel');
+}, 100);
 
 function describeContextColors(pixels, sel, gridW, gridH){
   // Sample colors around the selection border to give the AI context
