@@ -2108,8 +2108,14 @@ function hitTestSymmetryLine(e) {
   return null;
 }
 
+let _primaryPointerId = null;
+
 function onMouseDown(e) {
   e.preventDefault();
+  // Only track the first pointer (ignore additional fingers on touch)
+  if (_primaryPointerId !== null && e.pointerId !== _primaryPointerId) return;
+  _primaryPointerId = e.pointerId;
+
   const { x, y } = getPixelCoords(e);
 
   // Symmetry line dragging
@@ -2294,6 +2300,8 @@ function onMouseDown(e) {
 }
 
 function onMouseMove(e) {
+  // Ignore non-primary pointer (extra fingers on touch)
+  if (_primaryPointerId !== null && e.pointerId !== _primaryPointerId) return;
   // Middle-click free pan
   if (state._panning) {
     state.panX = state._panOriginX + (e.clientX - state._panStartX);
@@ -2457,7 +2465,10 @@ function onMouseMove(e) {
   }
 }
 
-function onMouseUp() {
+function onMouseUp(e) {
+  // Only handle the primary pointer
+  if (e && e.pointerId !== undefined && e.pointerId !== _primaryPointerId) return;
+  _primaryPointerId = null;
   // End symmetry axis drag
   if (state._draggingSymAxis) {
     state._draggingSymAxis = null;
@@ -2537,7 +2548,9 @@ function onMouseUp() {
   state.isDrawing = false;
   state._rightDrawing = false;
 }
-function onMouseLeave() {
+function onMouseLeave(e) {
+  if (e && e.pointerId !== undefined && e.pointerId !== _primaryPointerId) return;
+  _primaryPointerId = null;
   if (state.isDrawing || state._rightDrawing) { saveCurrentFrame(); autoSave(); }
   state.isDrawing = false; state._rightDrawing = false; state._panning = false; state._floatingDrag = false; state._floatingResize = false;
   state._lastMouseX = null; state._lastMouseY = null;
@@ -5990,8 +6003,9 @@ function pointInPolygon(px, py, polygon) {
 const PIXELFORGE_CLIP_MARKER = 'PIXELFORGE_CLIPBOARD_V1';
 
 function copySelection(fromActiveLayerOnly) {
-  const s = state.selection;
-  if (!s || s.w < 1 || s.h < 1) { showToast('No selection', 'error'); return; }
+  let s = state.selection;
+  // No selection = copy entire canvas
+  if (!s || s.w < 1 || s.h < 1) { s = { x: 0, y: 0, w: state.gridW, h: state.gridH }; }
   const pixels = Array(s.h).fill(null).map((_, ry) =>
     Array(s.w).fill(null).map((_, rx) => {
       if (state.selectionMask && !state.selectionMask[ry][rx]) return null;
