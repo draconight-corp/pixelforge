@@ -1594,6 +1594,14 @@
           <div class="config-row"><label>Zoom</label><input type="range" min="1" max="24" value="8" id="gridZoom" oninput="updateZoomFromSlider()"><div class="val" id="gridZoomVal">8×</div><button class="btn-sm" onclick="fitZoom()" title="Centrer et adapter le zoom" style="padding:1px 5px;font-size:9px">⊞</button></div>
           <div class="config-row">
             <label style="min-width:auto;display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="showGridCb" checked onchange="toggleGrid()"> Grid</label>
+            <select id="gridSubSize" onchange="state.gridSubSize=parseInt(this.value);renderCanvas();" style="font-size:9px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:2px;padding:0 2px">
+              <option value="0">—</option>
+              <option value="2">2px</option>
+              <option value="4">4px</option>
+              <option value="8">8px</option>
+              <option value="16">16px</option>
+              <option value="32">32px</option>
+            </select>
             <label style="min-width:auto;display:flex;align-items:center;gap:3px;cursor:pointer;margin-left:6px"><input type="checkbox" id="blackOutlineCb" onchange="toggleOutline()"> Outline</label>
           </div>
         </div>
@@ -1905,7 +1913,7 @@ const state = {
   activeCategory: 'rpg',
   sprites: [], activeSprite: null,
   startX: null, startY: null, tempPixels: null,
-  showGrid: true, blackOutline: false,
+  showGrid: true, gridSubSize: 0, blackOutline: false,
   layers: [],          // Array of {id, name, pixels:[][], visible:true, opacity:1.0, locked:false}
   activeLayerId: null,  // ID of active layer
   // Animation frames
@@ -2856,6 +2864,13 @@ function renderCanvas() {
     octx.strokeStyle='rgba(255,255,255,0.12)';octx.lineWidth=0.5;
     for(let x=0;x<=gridW;x++){octx.beginPath();octx.moveTo(x*zoom,0);octx.lineTo(x*zoom,gridH*zoom);octx.stroke();}
     for(let y=0;y<=gridH;y++){octx.beginPath();octx.moveTo(0,y*zoom);octx.lineTo(gridW*zoom,y*zoom);octx.stroke();}
+  }
+  // Subdivision grid (thicker lines every N pixels)
+  if(state.gridSubSize>1&&zoom>=2) {
+    const sub=state.gridSubSize;
+    octx.strokeStyle='rgba(255,200,50,0.35)';octx.lineWidth=1;
+    for(let x=0;x<=gridW;x+=sub){octx.beginPath();octx.moveTo(x*zoom,0);octx.lineTo(x*zoom,gridH*zoom);octx.stroke();}
+    for(let y=0;y<=gridH;y+=sub){octx.beginPath();octx.moveTo(0,y*zoom);octx.lineTo(gridW*zoom,y*zoom);octx.stroke();}
   }
   // Draw lasso path while drawing
   if(state.tool==='lasso' && state.isDrawing && state.lassoPoints.length>=2){
