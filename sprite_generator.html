@@ -1583,7 +1583,7 @@
         <div class="r-section" style="border-bottom:none">
           <div class="config-row"><label>W</label><input type="range" min="8" max="256" step="4" value="32" id="gridW" oninput="updateGridConfig()"><div class="val" id="gridWVal">32</div></div>
           <div class="config-row"><label>H</label><input type="range" min="8" max="256" step="4" value="32" id="gridH" oninput="updateGridConfig()"><div class="val" id="gridHVal">32</div></div>
-          <div class="config-row"><label>Zoom</label><input type="range" min="1" max="24" value="8" id="gridZoom" oninput="updateZoomFromSlider()"><div class="val" id="gridZoomVal">8×</div></div>
+          <div class="config-row"><label>Zoom</label><input type="range" min="1" max="24" value="8" id="gridZoom" oninput="updateZoomFromSlider()"><div class="val" id="gridZoomVal">8×</div><button class="btn-sm" onclick="fitZoom()" title="Centrer et adapter le zoom" style="padding:1px 5px;font-size:9px">⊞</button></div>
           <div class="config-row">
             <label style="min-width:auto;display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="showGridCb" checked onchange="toggleGrid()"> Grid</label>
             <label style="min-width:auto;display:flex;align-items:center;gap:3px;cursor:pointer;margin-left:6px"><input type="checkbox" id="blackOutlineCb" onchange="toggleOutline()"> Outline</label>
@@ -3735,6 +3735,7 @@ function loadSprite(id){
   state.isPlaying = false;
   document.getElementById('playBtn').textContent = 'Play';
   renderFrameStrip();
+  fitZoom();
   showToast(`Loaded "${sp.name}"`,'success');
 }
 function duplicateSprite(id,e){
