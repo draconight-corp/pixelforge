@@ -643,6 +643,22 @@
     box-shadow: 0 4px 16px rgba(0,0,0,0.5);
   }
   .inpaint-panel.show { display: block; }
+
+  .sel-toolbar {
+    display: none; position: fixed; z-index: 89;
+    background: var(--bg-darker); border: 1px solid var(--border);
+    border-radius: 4px; padding: 3px 4px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+    gap: 2px; align-items: center;
+  }
+  .sel-toolbar.show { display: flex; }
+  .sel-toolbar button {
+    background: var(--bg-darkest); border: 1px solid var(--border);
+    color: var(--text); cursor: pointer; border-radius: 2px;
+    padding: 3px 6px; font-size: 10px; white-space: nowrap;
+  }
+  .sel-toolbar button:hover { background: var(--hover); color: var(--text-bright); border-color: var(--accent); }
+  .sel-toolbar .sel-info { font-size: 9px; color: var(--text-dim); padding: 0 4px; }
   .inpaint-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
   .inpaint-title { font-size: 10px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; }
   .inpaint-info { font-size: 9px; color: var(--text-dim); margin-bottom: 4px; }
@@ -1811,6 +1827,19 @@
   </div>
 </div>
 
+<div class="sel-toolbar" id="selToolbar">
+  <span class="sel-info" id="selToolbarInfo"></span>
+  <button onclick="copySelection()" title="Copier">Copier</button>
+  <button onclick="copySelection(true);deleteSelection()" title="Couper">Couper</button>
+  <button onclick="pasteClipboard()" title="Coller">Coller</button>
+  <button onclick="deleteSelection()" title="Supprimer">Suppr</button>
+  <button onclick="flipSelectionH()" title="Miroir H">↔</button>
+  <button onclick="flipSelectionV()" title="Miroir V">↕</button>
+  <button onclick="rotateSelectionCW()" title="Rotation 90°">⟳</button>
+  <button onclick="showInpaintPanel()" title="Générer dans la sélection (IA)">IA ✦</button>
+  <button onclick="hideSelectionToolbar();deselectAll()" title="Désélectionner">✕</button>
+</div>
+
 <div class="inpaint-panel" id="inpaintPanel">
   <div class="inpaint-header">
     <span class="inpaint-title">GENERATE IN SELECTION</span>
@@ -2536,9 +2565,9 @@ function onMouseUp(e) {
   if (state.tool === 'lasso' && state.lassoPoints.length >= 3) {
     finalizeLasso();
   }
-  // Show inpaint panel after selection
+  // Show selection toolbar (NOT inpaint panel — that's on demand via button)
   if ((state.tool === 'select' || state.tool === 'lasso') && state.selection && state.selection.w > 1 && state.selection.h > 1) {
-    showInpaintPanel();
+    showSelectionToolbar();
   }
   // Auto-save after any drawing action
   if (state.isDrawing || state._rightDrawing) {
@@ -3078,7 +3107,7 @@ function applyPresetSelection(w, h){
   document.getElementById('selectPresetsPopup').classList.remove('show');
   if(state.tool!=='select') setMode('select');
   renderCanvas();
-  showInpaintPanel();
+  showSelectionToolbar();
   showToast(`Sélection ${w}×${h}`, 'success');
 }
 
@@ -3664,7 +3693,7 @@ function renderSprites(){
     const d=document.createElement('div');d.className=`sprite-item${sp.id===state.activeSprite?' active':''}`;
     const c=document.createElement('canvas');c.className='sprite-thumb';c.width=sp.w;c.height=sp.h;
     renderThumb(c,sp);
-    d.innerHTML=`<div class="sprite-info"><div class="sprite-name" ondblclick="renameSprite('${sp.id}',event)" title="Double-clic pour renommer">${sp.name}</div><div class="sprite-meta">${sp.w}×${sp.h}</div></div><div class="sprite-actions"><button class="s-act-btn" onclick="renameSprite('${sp.id}',event)" title="Renommer">✎</button><button class="s-act-btn" onclick="regenSprite('${sp.id}',event)">↻</button><button class="s-act-btn" onclick="deleteSprite('${sp.id}',event)">×</button></div>`;
+    d.innerHTML=`<div class="sprite-info"><div class="sprite-name" ondblclick="renameSprite('${sp.id}',event)" title="Double-clic pour renommer">${sp.name}</div><div class="sprite-meta">${sp.w}×${sp.h}</div></div><div class="sprite-actions"><button class="s-act-btn" onclick="renameSprite('${sp.id}',event)" title="Renommer">✎</button><button class="s-act-btn" onclick="duplicateSprite('${sp.id}',event)" title="Dupliquer">⧉</button><button class="s-act-btn" onclick="regenSprite('${sp.id}',event)">↻</button><button class="s-act-btn" onclick="deleteSprite('${sp.id}',event)">×</button></div>`;
     d.prepend(c);d.onclick=()=>loadSprite(sp.id);el.appendChild(d);
   });
 }
@@ -3707,6 +3736,24 @@ function loadSprite(id){
   document.getElementById('playBtn').textContent = 'Play';
   renderFrameStrip();
   showToast(`Loaded "${sp.name}"`,'success');
+}
+function duplicateSprite(id,e){
+  e.stopPropagation();
+  const sp=state.sprites.find(s=>s.id===id);
+  if(!sp)return;
+  const clone=JSON.parse(JSON.stringify(sp));
+  clone.id='sprite_'+Date.now();
+  clone.name=sp.name+' (copie)';
+  clone.created=Date.now();
+  // Insert right after the original
+  const idx=state.sprites.indexOf(sp);
+  state.sprites.splice(idx+1,0,clone);
+  const c=state.categories.find(c=>c.id===clone.categoryId);
+  if(c)c.count++;
+  renderCategories();renderSprites();
+  loadSprite(clone.id);
+  showToast(`"${sp.name}" dupliqué`,'success');
+  autoSave();
 }
 function deleteSprite(id,e){e.stopPropagation();if(!confirm('Delete?'))return;state.sprites=state.sprites.filter(s=>s.id!==id);const c=state.categories.find(c=>c.id===state.activeCategory);if(c)c.count=Math.max(0,c.count-1);renderCategories();renderSprites();autoSave();}
 function renameSprite(id,e){
@@ -4676,17 +4723,37 @@ function cancelIterPick(){
 }
 
 // ===== INPAINT IN SELECTION =====
+function showSelectionToolbar(){
+  const bar=document.getElementById('selToolbar');
+  const s=state.selection;
+  if(!s||!bar)return;
+  document.getElementById('selToolbarInfo').textContent=`${s.w}×${s.h}`;
+  // Position above the selection
+  const canvas=document.getElementById('pixelCanvas');
+  const rect=canvas.getBoundingClientRect();
+  let px=rect.left+s.x*state.zoom;
+  let py=rect.top+s.y*state.zoom-32;
+  if(py<2)py=rect.top+(s.y+s.h)*state.zoom+4;
+  if(px+400>window.innerWidth)px=window.innerWidth-410;
+  if(px<2)px=2;
+  bar.style.left=px+'px';bar.style.top=py+'px';
+  bar.classList.add('show');
+}
+
+function hideSelectionToolbar(){
+  document.getElementById('selToolbar')?.classList.remove('show');
+  hideInpaintPanel();
+}
+
 function showInpaintPanel(){
   const panel=document.getElementById('inpaintPanel');
   const s=state.selection;
   if(!s)return;
   document.getElementById('inpaintInfo').textContent=`Selection: ${s.w}×${s.h} px (at ${s.x},${s.y})`;
-  // Position panel near the selection
   const canvas=document.getElementById('pixelCanvas');
   const rect=canvas.getBoundingClientRect();
   let px=rect.left+(s.x+s.w)*state.zoom+10;
   let py=rect.top+s.y*state.zoom;
-  // Keep on screen
   if(px+250>window.innerWidth)px=rect.left+s.x*state.zoom-255;
   if(py+300>window.innerHeight)py=window.innerHeight-310;
   if(px<5)px=5;if(py<5)py=5;
@@ -6237,7 +6304,7 @@ function deselectAll() {
   state.selection = null;
   state.selectionMask = null;
   state.lassoPoints = [];
-  hideInpaintPanel();
+  hideSelectionToolbar();
   renderCanvas();
   showToast('Deselected', 'success');
 }
@@ -6845,6 +6912,7 @@ function setMode(mode){
   // Hide tool options popups when switching tools
   if(mode!=='lighten'&&mode!=='darken') hideToolOptions();
   if(mode!=='select') document.getElementById('selectPresetsPopup')?.classList.remove('show');
+  if(mode!=='select'&&mode!=='lasso') hideSelectionToolbar();
   // Selection persists across tool changes — use Ctrl+D or Deselect to clear
   state.tool=mode;
   document.querySelectorAll('.t-btn').forEach(b=>b.classList.remove('active'));
