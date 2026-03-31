@@ -1829,6 +1829,11 @@
 
 <div class="sel-toolbar" id="selToolbar">
   <span class="sel-info" id="selToolbarInfo"></span>
+  <button onclick="moveSelectionPixels(0,-1)" title="Monter 1px">▲</button>
+  <button onclick="moveSelectionPixels(-1,0)" title="Gauche 1px">◀</button>
+  <button onclick="moveSelectionPixels(1,0)" title="Droite 1px">▶</button>
+  <button onclick="moveSelectionPixels(0,1)" title="Descendre 1px">▼</button>
+  <span style="width:1px;height:14px;background:var(--border);flex-shrink:0"></span>
   <button onclick="copySelection()" title="Copier">Copier</button>
   <button onclick="copySelection(true);deleteSelection()" title="Couper">Couper</button>
   <button onclick="pasteClipboard()" title="Coller">Coller</button>
@@ -3693,7 +3698,7 @@ function renderSprites(){
     const d=document.createElement('div');d.className=`sprite-item${sp.id===state.activeSprite?' active':''}`;
     const c=document.createElement('canvas');c.className='sprite-thumb';c.width=sp.w;c.height=sp.h;
     renderThumb(c,sp);
-    d.innerHTML=`<div class="sprite-info"><div class="sprite-name" ondblclick="renameSprite('${sp.id}',event)" title="Double-clic pour renommer">${sp.name}</div><div class="sprite-meta">${sp.w}×${sp.h}</div></div><div class="sprite-actions"><button class="s-act-btn" onclick="renameSprite('${sp.id}',event)" title="Renommer">✎</button><button class="s-act-btn" onclick="duplicateSprite('${sp.id}',event)" title="Dupliquer">⧉</button><button class="s-act-btn" onclick="regenSprite('${sp.id}',event)">↻</button><button class="s-act-btn" onclick="deleteSprite('${sp.id}',event)">×</button></div>`;
+    d.innerHTML=`<div class="sprite-info"><div class="sprite-name" ondblclick="renameSprite('${sp.id}',event)" title="Double-clic pour renommer">${sp.name}</div><div class="sprite-meta">${sp.w}×${sp.h}</div></div><div class="sprite-actions"><button class="s-act-btn" onclick="moveSpriteUp('${sp.id}',event)" title="Monter">▲</button><button class="s-act-btn" onclick="moveSpriteDown('${sp.id}',event)" title="Descendre">▼</button><button class="s-act-btn" onclick="renameSprite('${sp.id}',event)" title="Renommer">✎</button><button class="s-act-btn" onclick="duplicateSprite('${sp.id}',event)" title="Dupliquer">⧉</button><button class="s-act-btn" onclick="regenSprite('${sp.id}',event)">↻</button><button class="s-act-btn" onclick="deleteSprite('${sp.id}',event)">×</button></div>`;
     d.prepend(c);d.onclick=()=>loadSprite(sp.id);el.appendChild(d);
   });
 }
@@ -3737,6 +3742,20 @@ function loadSprite(id){
   renderFrameStrip();
   fitZoom();
   showToast(`Loaded "${sp.name}"`,'success');
+}
+function moveSpriteUp(id,e){
+  e.stopPropagation();
+  const idx=state.sprites.findIndex(s=>s.id===id);
+  if(idx<=0)return;
+  [state.sprites[idx-1],state.sprites[idx]]=[state.sprites[idx],state.sprites[idx-1]];
+  renderSprites();autoSave();
+}
+function moveSpriteDown(id,e){
+  e.stopPropagation();
+  const idx=state.sprites.findIndex(s=>s.id===id);
+  if(idx<0||idx>=state.sprites.length-1)return;
+  [state.sprites[idx],state.sprites[idx+1]]=[state.sprites[idx+1],state.sprites[idx]];
+  renderSprites();autoSave();
 }
 function duplicateSprite(id,e){
   e.stopPropagation();
@@ -6298,6 +6317,41 @@ function updateFloatingBar() {
   bar.style.left = Math.max(5, Math.min(fx, window.innerWidth - 300)) + 'px';
   bar.style.top = Math.max(5, fy) + 'px';
   bar.classList.add('show');
+}
+
+function moveSelectionPixels(dx, dy) {
+  const s = state.selection;
+  if (!s) return;
+  saveUndo();
+  // Extract selected pixels
+  const extracted = Array(s.h).fill(null).map((_, ry) =>
+    Array(s.w).fill(null).map((_, rx) => {
+      if (state.selectionMask && !state.selectionMask[ry][rx]) return null;
+      const gx = s.x + rx, gy = s.y + ry;
+      if (gx >= 0 && gx < state.gridW && gy >= 0 && gy < state.gridH) return state.pixels[gy][gx];
+      return null;
+    })
+  );
+  // Clear old position
+  for (let ry = 0; ry < s.h; ry++)
+    for (let rx = 0; rx < s.w; rx++) {
+      if (state.selectionMask && !state.selectionMask[ry][rx]) continue;
+      const gx = s.x + rx, gy = s.y + ry;
+      if (gx >= 0 && gx < state.gridW && gy >= 0 && gy < state.gridH) state.pixels[gy][gx] = null;
+    }
+  // Move selection
+  s.x += dx; s.y += dy;
+  // Paste at new position
+  for (let ry = 0; ry < s.h; ry++)
+    for (let rx = 0; rx < s.w; rx++) {
+      if (state.selectionMask && !state.selectionMask[ry][rx]) continue;
+      const gx = s.x + rx, gy = s.y + ry;
+      if (gx >= 0 && gx < state.gridW && gy >= 0 && gy < state.gridH && extracted[ry][rx]) {
+        state.pixels[gy][gx] = extracted[ry][rx];
+      }
+    }
+  renderCanvas();
+  showSelectionToolbar();
 }
 
 function deselectAll() {
